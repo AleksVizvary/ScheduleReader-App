@@ -42,14 +42,11 @@ enum EmployeeSelectionMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum ScheduleReaderError: LocalizedError {
-    case unsupportedXLSX
     case unreadableSource
     case noEmployee
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedXLSX:
-            return "Wybrany XLSX jest gotowy do podpięcia biblioteki Excela, ale natywny Swift parser czyta teraz CSV. Wyeksportuj grafik do CSV albo podepnij moduł XLSX."
         case .unreadableSource:
             return "Nie mogę odczytać wybranego pliku."
         case .noEmployee:
@@ -87,7 +84,6 @@ final class ScheduleReaderBackend: ObservableObject {
     }
 
     func generateSchedule(sourceURL: URL, employee: Employee, month: String, customName: String) throws -> GeneratedScheduleFile {
-        guard sourceURL.pathExtension.lowercased() != "xlsx" else { throw ScheduleReaderError.unsupportedXLSX }
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if didAccess {
@@ -95,7 +91,8 @@ final class ScheduleReaderBackend: ObservableObject {
             }
         }
 
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let readableURL = try csvReadableURL(for: sourceURL)
+        let source = try String(contentsOf: readableURL, encoding: .utf8)
         let schedule = parseScheduleCSV(source)
         let events = makeCalendarEvents(schedule: schedule, client: employee.name)
         let ics = makeICS(events: events)
@@ -302,6 +299,20 @@ final class ScheduleReaderBackend: ObservableObject {
         return url
     }
 
+    private func csvReadableURL(for sourceURL: URL) throws -> URL {
+        guard sourceURL.pathExtension.lowercased() == "xlsx" else { return sourceURL }
+
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(sourceURL.deletingPathExtension().lastPathComponent)
+            .appendingPathExtension("csv")
+
+        if FileManager.default.fileExists(atPath: temporaryURL.path) {
+            try FileManager.default.removeItem(at: temporaryURL)
+        }
+        try FileManager.default.copyItem(at: sourceURL, to: temporaryURL)
+        return temporaryURL
+    }
+
     private func splitCSVLine(_ line: String) -> [String] {
         let delimiter: Character = line.contains(";") ? ";" : ","
         return line.split(separator: delimiter, omittingEmptySubsequences: false).map(String.init)
@@ -321,7 +332,7 @@ final class GrafikViewModel: ObservableObject {
     @Published var isSettingsVisible = false
     @Published var themeName = "Domyślny"
     @Published var logoName = "GG"
-    @Published var statusMessage = "Gotowe do generowania ICS."
+    @Published var statusMessage = "Gotowe do generowania ICS z grafiku XLSX."
     @Published var latestGeneratedFile: GeneratedScheduleFile?
 
     let months = [
@@ -342,7 +353,7 @@ final class GrafikViewModel: ObservableObject {
     func selectFile(_ url: URL) {
         selectedInputFileURL = url
         selectedInputFileName = url.lastPathComponent
-        statusMessage = "Załadowano grafik: \(url.lastPathComponent)"
+        statusMessage = "Załadowano grafik XLSX: \(url.lastPathComponent)"
     }
 
     func selectPreviousEmployee() {
@@ -450,7 +461,7 @@ struct ContentView: View {
         .onAppear { viewModel.syncManualFileNameIfNeeded(force: true) }
         .fileImporter(
             isPresented: $isFileImporterPresented,
-            allowedContentTypes: [.commaSeparatedText, .plainText, .data],
+            allowedContentTypes: [.spreadsheet, .data],
             allowsMultipleSelection: false
         ) { result in
             if let url = try? result.get().first {
@@ -496,7 +507,7 @@ struct ContentView: View {
             Button {
                 isFileImporterPresented = true
             } label: {
-                Label("Załaduj grafik CSV", systemImage: "folder")
+                Label("Załaduj grafik XLSX", systemImage: "folder")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
