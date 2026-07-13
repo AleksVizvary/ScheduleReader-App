@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+internal import Combine
 
 // MARK: - Models
 // MARK: - Models ported from the Python ScheduleReader flow
@@ -64,7 +65,9 @@ enum ScheduleReaderError: LocalizedError {
 
 // MARK: - Backend facade with the Python parser rules ported to Swift
 
-final class ScheduleReaderBackend: ObservableObject {
+    final class ScheduleReaderBackend: ObservableObject {
+        let objectWillChange: ObservableObjectPublisher
+        
     @Published var employees: [Employee] = [
         Employee(name: "Aleksander Vizváry"),
         Employee(name: "Marcin Chełpa"),
