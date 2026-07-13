@@ -555,6 +555,7 @@ final class GrafikViewModel: ObservableObject {
 // MARK: - UI
 
 struct ContentView: View {
+    private static let xlsxType = UTType(filenameExtension: "xlsx") ?? .data
     @StateObject private var viewModel = GrafikViewModel()
     @State private var isFileImporterPresented = false
 
