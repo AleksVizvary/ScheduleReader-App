@@ -1,5 +1,5 @@
+import Combine
 import Foundation
-import SwiftUI
 
 final class GrafikViewModel: ObservableObject {
     @Published var backend = ScheduleReaderBackend()
