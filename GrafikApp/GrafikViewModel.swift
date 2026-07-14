@@ -79,6 +79,8 @@ final class GrafikViewModel: ObservableObject {
             return
         }
 
+        latestGeneratedFile = nil
+
         do {
             let file = try backend.generateSchedule(
                 sourceURL: selectedInputFileURL,
@@ -86,6 +88,9 @@ final class GrafikViewModel: ObservableObject {
                 month: selectedMonth,
                 customName: manualFileName
             )
+            guard FileManager.default.fileExists(atPath: file.fileURL.path) else {
+                throw ScheduleReaderError.icsWriteFailed
+            }
             latestGeneratedFile = file
             statusMessage = "Wygenerowano ICS: \(file.fileName)"
         } catch {

@@ -39,15 +39,36 @@ enum EmployeeSelectionMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum ScheduleReaderError: LocalizedError {
+    case unsupportedExtension
     case unreadableSource
+    case unreadableXLSX
+    case noWorksheet
+    case noRecognizedDates
+    case noRecognizedEmployees
+    case noShiftsForEmployee
     case noEmployee
+    case icsWriteFailed
 
     var errorDescription: String? {
         switch self {
+        case .unsupportedExtension:
+            return "Nieobsługiwane rozszerzenie pliku. Wybierz plik XLSX albo CSV."
         case .unreadableSource:
             return "Nie mogę odczytać wybranego pliku."
+        case .unreadableXLSX:
+            return "Plik XLSX jest uszkodzony albo nieczytelny."
+        case .noWorksheet:
+            return "Plik XLSX nie zawiera arkusza z grafikiem."
+        case .noRecognizedDates:
+            return "Nie rozpoznano żadnych dat w grafiku."
+        case .noRecognizedEmployees:
+            return "Nie rozpoznano żadnych pracowników w grafiku."
+        case .noShiftsForEmployee:
+            return "Nie znaleziono zmian wybranego pracownika."
         case .noEmployee:
             return "Dodaj lub wybierz pracownika przed generowaniem."
+        case .icsWriteFailed:
+            return "Nie udało się zapisać pliku ICS."
         }
     }
 }
