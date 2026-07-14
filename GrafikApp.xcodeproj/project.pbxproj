@@ -6,17 +6,23 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+	55BA76012FFE80000033F710 /* GrafikAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BA76112FFE80000033F710 /* GrafikAppApp.swift */; };
+	55BA76022FFE80000033F710 /* ScheduleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BA76122FFE80000033F710 /* ScheduleModels.swift */; };
+	55BA76032FFE80000033F710 /* ScheduleReaderBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BA76132FFE80000033F710 /* ScheduleReaderBackend.swift */; };
+	55BA76042FFE80000033F710 /* GrafikViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BA76142FFE80000033F710 /* GrafikViewModel.swift */; };
+	55BA76052FFE80000033F710 /* KodApki.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BA76152FFE80000033F710 /* KodApki.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		55BA76112FFE80000033F710 /* GrafikAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrafikAppApp.swift; sourceTree = "<group>"; };
+		55BA76122FFE80000033F710 /* ScheduleModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleModels.swift; sourceTree = "<group>"; };
+		55BA76132FFE80000033F710 /* ScheduleReaderBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleReaderBackend.swift; sourceTree = "<group>"; };
+		55BA76142FFE80000033F710 /* GrafikViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrafikViewModel.swift; sourceTree = "<group>"; };
+		55BA76152FFE80000033F710 /* KodApki.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KodApki.swift; sourceTree = "<group>"; };
 		55BA75E82FFE78D20033F710 /* GrafikApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GrafikApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		55BA75EA2FFE78D20033F710 /* GrafikApp */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = GrafikApp;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		55BA75E52FFE78D20033F710 /* Frameworks */ = {
@@ -29,6 +35,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		55BA75EA2FFE78D20033F710 /* GrafikApp */ = {
+			isa = PBXGroup;
+			children = (
+				55BA76112FFE80000033F710 /* GrafikAppApp.swift */,
+				55BA76122FFE80000033F710 /* ScheduleModels.swift */,
+				55BA76132FFE80000033F710 /* ScheduleReaderBackend.swift */,
+				55BA76142FFE80000033F710 /* GrafikViewModel.swift */,
+				55BA76152FFE80000033F710 /* KodApki.swift */,
+			);
+			path = GrafikApp;
+			sourceTree = "<group>";
+		};
 		55BA75DF2FFE78D20033F710 = {
 			isa = PBXGroup;
 			children = (
@@ -59,9 +77,6 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				55BA75EA2FFE78D20033F710 /* GrafikApp */,
 			);
 			name = GrafikApp;
 			packageProductDependencies = (
@@ -119,6 +134,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				55BA76012FFE80000033F710 /* GrafikAppApp.swift in Sources */,
+				55BA76022FFE80000033F710 /* ScheduleModels.swift in Sources */,
+				55BA76032FFE80000033F710 /* ScheduleReaderBackend.swift in Sources */,
+				55BA76042FFE80000033F710 /* GrafikViewModel.swift in Sources */,
+				55BA76052FFE80000033F710 /* KodApki.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
