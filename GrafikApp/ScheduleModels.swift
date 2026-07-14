@@ -31,6 +31,31 @@ struct CalendarEvent: Hashable {
     var description: String
 }
 
+struct ParsedCellDiagnostic: Hashable {
+    let reference: String
+    let rawValue: String
+    let interpretedAs: String
+}
+
+struct ScheduleAssignmentDiagnostic: Hashable {
+    let dateReference: String
+    let employeeReference: String
+    let shiftReference: String
+    let date: Date
+    let employee: String
+    let shift: WorkShift
+}
+
+struct ScheduleParserDiagnosticReport: Hashable {
+    var sheetNames: [String] = []
+    var selectedSheetName: String = ""
+    var rowCount: Int = 0
+    var recognizedDates: [ParsedCellDiagnostic] = []
+    var recognizedEmployees: [ParsedCellDiagnostic] = []
+    var recognizedShifts: [ParsedCellDiagnostic] = []
+    var assignments: [ScheduleAssignmentDiagnostic] = []
+}
+
 enum EmployeeSelectionMode: String, CaseIterable, Identifiable, Codable {
     case picker = "Lista"
     case stepper = "Przeklikiwanie"
@@ -70,5 +95,11 @@ enum ScheduleReaderError: LocalizedError {
         case .icsWriteFailed:
             return "Nie udało się zapisać pliku ICS."
         }
+    }
+}
+
+extension WorkShift {
+    var displayText: String {
+        String(format: "%02d:00-%02d:00", startHour, endHour)
     }
 }

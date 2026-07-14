@@ -25,6 +25,7 @@ final class ScheduleReaderBackend: ObservableObject {
 
     private let eventName = "Praca"
     private let address = "ul. Pawia 5, 31-154, Kraków, Polska"
+    private(set) var lastDiagnosticReport: ScheduleParserDiagnosticReport?
 
     var bossName: String {
         employees.indices.contains(7) ? employees[7].name : employees.last?.name ?? ""
@@ -76,7 +77,12 @@ final class ScheduleReaderBackend: ObservableObject {
             }
             return try validated(schedule: parseScheduleCSV(source))
         case "xlsx":
-            return try validated(schedule: parseScheduleXLSX(sourceURL))
+            let result = try parseScheduleXLSXWithDiagnostics(sourceURL)
+            lastDiagnosticReport = result.diagnostic
+            #if DEBUG
+            printDiagnosticReport(result.diagnostic)
+            #endif
+            return try validated(schedule: result.schedule)
         default:
             throw ScheduleReaderError.unsupportedExtension
         }
@@ -109,74 +115,93 @@ final class ScheduleReaderBackend: ObservableObject {
         return schedule
     }
 
-    private func parseScheduleXLSX(_ sourceURL: URL) throws -> [(date: Date, people: [String: WorkShift?])] {
+    func diagnoseXLSX(sourceURL: URL) throws -> (schedule: [(date: Date, people: [String: WorkShift?])], diagnostic: ScheduleParserDiagnosticReport) {
+        try parseScheduleXLSXWithDiagnostics(sourceURL)
+    }
+
+    private func parseScheduleXLSXWithDiagnostics(_ sourceURL: URL) throws -> (schedule: [(date: Date, people: [String: WorkShift?])], diagnostic: ScheduleParserDiagnosticReport) {
 #if canImport(CoreXLSX)
         guard let file = XLSXFile(filepath: sourceURL.path) else { throw ScheduleReaderError.unreadableXLSX }
         let sharedStrings = try? file.parseSharedStrings()
-        _ = try? file.parseStyles()
+        let worksheetInfos = try worksheetInfos(in: file)
+        guard !worksheetInfos.isEmpty else { throw ScheduleReaderError.noWorksheet }
 
-        let worksheetPaths: [String]
-        do {
-            worksheetPaths = try file.parseWorksheetPaths()
-        } catch {
-            throw ScheduleReaderError.unreadableXLSX
-        }
-        guard let worksheetPath = worksheetPaths.first else { throw ScheduleReaderError.noWorksheet }
+        var analyzedSheets: [(path: String, name: String, rows: [Row], dates: [Int: [(row: Int, date: Date, diagnostic: ParsedCellDiagnostic)]], employees: [Int: (name: String, diagnostic: ParsedCellDiagnostic)], shifts: [(row: Int, column: Int, diagnostic: ParsedCellDiagnostic, shift: WorkShift)])] = []
 
-        let worksheet: Worksheet
-        do {
-            worksheet = try file.parseWorksheet(at: worksheetPath)
-        } catch {
-            throw ScheduleReaderError.unreadableXLSX
-        }
-        guard let rows = worksheet.data?.rows, !rows.isEmpty else { throw ScheduleReaderError.noWorksheet }
+        for info in worksheetInfos {
+            let worksheet = try file.parseWorksheet(at: info.path)
+            let rows = worksheet.data?.rows ?? []
+            var dates: [Int: [(row: Int, date: Date, diagnostic: ParsedCellDiagnostic)]] = [:]
+            var employeesByRow: [Int: (String, ParsedCellDiagnostic)] = [:]
+            var shifts: [(Int, Int, ParsedCellDiagnostic, WorkShift)] = []
 
-        var dateByColumn: [Int: Date] = [:]
-        var scheduleByDay: [Date: [String: WorkShift?]] = [:]
-        var recognizedEmployees = Set<String>()
-
-        for row in rows {
-            var rowValues: [(column: Int, text: String, date: Date?)] = []
-            for cell in row.cells {
-                let text = xlsxText(for: cell, sharedStrings: sharedStrings)
-                let date = cell.dateValue ?? parseDate(text)
-                let column = columnIndex(from: String(describing: cell.reference))
-                rowValues.append((column: column, text: text, date: date))
-
-                if let date {
-                    dateByColumn[column] = date
-                    if scheduleByDay[date] == nil {
-                        scheduleByDay[date] = emptyDay()
+            for row in rows {
+                var rowTexts: [(reference: String, text: String)] = []
+                for cell in row.cells {
+                    let reference = String(describing: cell.reference)
+                    let text = xlsxText(for: cell, sharedStrings: sharedStrings)
+                    rowTexts.append((reference, text))
+                    let column = columnIndex(from: reference)
+                    if let date = cell.dateValue ?? parseDate(text) {
+                        dates[column, default: []].append((rowIndex(from: reference), date, ParsedCellDiagnostic(reference: reference, rawValue: text.isEmpty ? String(describing: cell.value ?? "") : text, interpretedAs: isoDay(date))))
+                    }
+                    if let shift = parseWorkHours(text) {
+                        shifts.append((rowIndex(from: reference), column, ParsedCellDiagnostic(reference: reference, rawValue: text, interpretedAs: shift.displayText), shift))
                     }
                 }
-            }
-
-            let employee = employeeIn(row: rowValues.map(\.text))
-            if let employee {
-                recognizedEmployees.insert(employee)
-            }
-
-            for value in rowValues {
-                guard let employee, let date = dateByColumn[value.column], let shift = parseWorkHours(value.text) else { continue }
-                if scheduleByDay[date] == nil {
-                    scheduleByDay[date] = emptyDay()
+                if let match = employeeIn(cells: rowTexts) {
+                    employeesByRow[rowIndex(from: match.reference)] = (match.name, ParsedCellDiagnostic(reference: match.reference, rawValue: match.rawValue, interpretedAs: match.name))
                 }
-                scheduleByDay[date]?[employee] = shift
             }
+            analyzedSheets.append((info.path, info.name, rows, dates, employeesByRow, shifts))
         }
 
-        if scheduleByDay.isEmpty { throw ScheduleReaderError.noRecognizedDates }
-        if recognizedEmployees.isEmpty { throw ScheduleReaderError.noRecognizedEmployees }
-        return scheduleByDay.keys.sorted().map { (date: $0, people: scheduleByDay[$0] ?? emptyDay()) }
+        let candidates = analyzedSheets.filter { !$0.dates.isEmpty && !$0.employees.isEmpty && !$0.shifts.isEmpty }
+        guard let selected = (candidates.max { $0.shifts.count < $1.shifts.count } ?? analyzedSheets.first) else { throw ScheduleReaderError.noWorksheet }
+
+        var report = ScheduleParserDiagnosticReport()
+        report.sheetNames = worksheetInfos.map(\.name)
+        report.selectedSheetName = selected.name
+        report.rowCount = selected.rows.count
+        report.recognizedDates = selected.dates.values.flatMap { $0.map(\.diagnostic) }.sorted { cellOrder($0.reference, $1.reference) }
+        report.recognizedEmployees = selected.employees.values.map(\.diagnostic).sorted { cellOrder($0.reference, $1.reference) }
+        report.recognizedShifts = selected.shifts.map(\.diagnostic).sorted { cellOrder($0.reference, $1.reference) }
+
+        var scheduleByDay: [Date: [String: WorkShift?]] = [:]
+        for dateInfo in selected.dates.values.flatMap({ $0 }) { scheduleByDay[dateInfo.date] = emptyDay() }
+
+        for shiftInfo in selected.shifts {
+            guard let dateInfo = selected.dates[shiftInfo.column]?.filter({ $0.row <= shiftInfo.row }).max(by: { $0.row < $1.row }), let employeeInfo = selected.employees[shiftInfo.row] else { continue }
+            scheduleByDay[dateInfo.date, default: emptyDay()][employeeInfo.name] = shiftInfo.shift
+            report.assignments.append(ScheduleAssignmentDiagnostic(dateReference: dateInfo.diagnostic.reference, employeeReference: employeeInfo.diagnostic.reference, shiftReference: shiftInfo.diagnostic.reference, date: dateInfo.date, employee: employeeInfo.name, shift: shiftInfo.shift))
+        }
+        report.assignments.sort { $0.date == $1.date ? $0.employee < $1.employee : $0.date < $1.date }
+
+        if selected.dates.isEmpty { throw ScheduleReaderError.noRecognizedDates }
+        if selected.employees.isEmpty { throw ScheduleReaderError.noRecognizedEmployees }
+        return (scheduleByDay.keys.sorted().map { (date: $0, people: scheduleByDay[$0] ?? emptyDay()) }, report)
 #else
         throw ScheduleReaderError.unreadableXLSX
 #endif
     }
 
 #if canImport(CoreXLSX)
+    private func worksheetInfos(in file: XLSXFile) throws -> [(path: String, name: String)] {
+        let paths = try file.parseWorksheetPaths()
+        // CoreXLSX exposes names through workbook metadata on supported versions.
+        if let workbook = try? file.parseWorkbooks().first,
+           let named = try? file.parseWorksheetPathsAndNames(workbook: workbook), !named.isEmpty {
+            return named.map { (path: $0.path, name: $0.name) }
+        }
+        return paths.enumerated().map { (offset, path) in (path: path, name: "Sheet\(offset + 1)") }
+    }
+
     private func xlsxText(for cell: Cell, sharedStrings: SharedStrings?) -> String {
         if let sharedStrings, let value = cell.stringValue(sharedStrings) {
             return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let inline = Mirror(reflecting: cell).children.first(where: { $0.label == "inlineString" })?.value as? String {
+            return inline.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return (cell.value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -204,17 +229,39 @@ final class ScheduleReaderBackend: ObservableObject {
     }
 
     private func employeeIn(row: [String]) -> String? {
-        for employee in employees where row.contains(where: { $0.localizedCaseInsensitiveContains(employee.name) }) {
-            return employee.name
+        employeeIn(cells: row.enumerated().map { (reference: "", text: $0.element) })?.name
+    }
+
+    private func employeeIn(cells: [(reference: String, text: String)]) -> (name: String, reference: String, rawValue: String)? {
+        let normalizedCells = cells.map { (reference: $0.reference, rawValue: $0.text, normalized: normalizedName($0.text)) }
+
+        for employee in employees {
+            let expected = normalizedName(employee.name)
+            let exact = normalizedCells.filter { $0.normalized == expected }
+            if exact.count == 1 { return (employee.name, exact[0].reference, exact[0].rawValue) }
         }
 
-        for cell in row {
-            let value = cell.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        for employee in employees {
+            let expected = normalizedName(employee.name)
+            let contained = normalizedCells.filter { !$0.normalized.isEmpty && $0.normalized.localizedCaseInsensitiveContains(expected) }
+            if contained.count == 1 { return (employee.name, contained[0].reference, contained[0].rawValue) }
+        }
+
+        for cell in cells {
+            let value = normalizedName(cell.text).uppercased()
             guard value.hasPrefix("P"), let number = Int(value.dropFirst()), employees.indices.contains(number - 1) else { continue }
-            return employees[number - 1].name
+            return (employees[number - 1].name, cell.reference, cell.text)
         }
 
         return nil
+    }
+
+    private func normalizedName(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .lowercased()
     }
 
     private func parseWorkHours(_ raw: String) -> WorkShift? {
@@ -226,13 +273,15 @@ final class ScheduleReaderBackend: ObservableObject {
         }
         value = value.replacingOccurrences(of: ",", with: "")
         value = value.replacingOccurrences(of: " ", with: "")
+        value = value.replacingOccurrences(of: ":00", with: "")
 
         let parts = value.split(separator: "-", omittingEmptySubsequences: true)
         guard parts.count == 2,
               let start = Int(parts[0]),
               let end = Int(parts[1]),
-              (0...24).contains(start),
-              (0...24).contains(end) else { return nil }
+              (0...23).contains(start),
+              (1...24).contains(end),
+              end > start else { return nil }
         return WorkShift(startHour: start, endHour: end)
     }
 
@@ -252,7 +301,37 @@ final class ScheduleReaderBackend: ObservableObject {
         return nil
     }
 
-    private func makeCalendarEvents(schedule: [(date: Date, people: [String: WorkShift?])], client: String) -> [CalendarEvent] {
+
+    private func rowIndex(from reference: String) -> Int {
+        Int(reference.filter(\.isNumber)) ?? 0
+    }
+
+    private func cellOrder(_ left: String, _ right: String) -> Bool {
+        let leftRow = rowIndex(from: left)
+        let rightRow = rowIndex(from: right)
+        if leftRow == rightRow { return columnIndex(from: left) < columnIndex(from: right) }
+        return leftRow < rightRow
+    }
+
+    private func isoDay(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private func printDiagnosticReport(_ report: ScheduleParserDiagnosticReport) {
+        print("[Sheets] \(report.sheetNames.joined(separator: ", "))")
+        print("[Sheet] \(report.selectedSheetName)")
+        print("[Rows] \(report.rowCount)")
+        report.recognizedDates.forEach { print("[Date] \($0.reference) raw=\($0.rawValue) parsed=\($0.interpretedAs)") }
+        report.recognizedEmployees.forEach { print("[Employee] \($0.reference) raw=\"\($0.rawValue)\"") }
+        report.recognizedShifts.forEach { print("[Shift] \($0.reference) raw=\"\($0.rawValue)\" parsed=\($0.interpretedAs)") }
+        report.assignments.forEach { print("[Assignment] \(isoDay($0.date)) | \($0.employee) | \($0.shift.displayText) dateCell=\($0.dateReference) employeeCell=\($0.employeeReference) shiftCell=\($0.shiftReference)") }
+    }
+
+    func makeCalendarEvents(schedule: [(date: Date, people: [String: WorkShift?])], client: String) -> [CalendarEvent] {
         schedule.compactMap { day in
             createDescription(day: day.people, client: client).map { result in
                 CalendarEvent(date: day.date, shift: result.shift, description: result.description)
@@ -310,7 +389,7 @@ final class ScheduleReaderBackend: ObservableObject {
         return false
     }
 
-    private func makeICS(events: [CalendarEvent]) -> String {
+    func makeICS(events: [CalendarEvent]) -> String {
         var lines = [
             "BEGIN:VCALENDAR",
             "PRODID:-//My calendar product//example.com//",
