@@ -1,5 +1,5 @@
+import Combine
 import Foundation
-import SwiftUI
 
 final class ScheduleReaderBackend: ObservableObject {
     @Published var employees: [Employee] = [
