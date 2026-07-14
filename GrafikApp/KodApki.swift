@@ -49,28 +49,12 @@ struct ContentView: View {
 
     private var mainScreen: some View {
         VStack(spacing: 18) {
-            headerCard
             filePickerCard
             employeePickerCard
             generateCard
+            generatedFileShareButton
         }
         .frame(maxWidth: 720)
-    }
-
-    private var headerCard: some View {
-        HStack(spacing: 14) {
-            Image(viewModel.logoName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 54, height: 54)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            Text("GENERATOR PLIKÓW")
-                .font(.title2.bold())
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(18)
-        .cardStyle()
     }
 
     private var filePickerCard: some View {
@@ -131,19 +115,9 @@ struct ContentView: View {
             TextField(viewModel.suggestedFileName, text: $viewModel.manualFileName)
                 .textFieldStyle(.roundedBorder)
 
-            HStack(spacing: 12) {
-                Button("Generuj") { viewModel.generate() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-
-                if let file = viewModel.latestGeneratedFile {
-                    ShareLink(item: file.fileURL) {
-                        Label("Pobierz / otwórz", systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                }
-            }
+            Button("Generuj") { viewModel.generate() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
 
             Text(viewModel.statusMessage)
                 .font(.footnote)
@@ -151,6 +125,23 @@ struct ContentView: View {
         }
         .padding(18)
         .cardStyle()
+    }
+
+    @ViewBuilder
+    private var generatedFileShareButton: some View {
+        if let file = viewModel.latestGeneratedFile {
+            ShareLink(item: file.fileURL) {
+                Label("Otwórz / udostępnij wygenerowany plik", systemImage: "square.and.arrow.up")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 58)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: .blue.opacity(0.22), radius: 16, y: 8)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: viewModel.latestGeneratedFile)
+        }
     }
 
     private var settingsSidebar: some View {

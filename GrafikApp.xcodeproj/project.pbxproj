@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+	55BA76002FFE90000033F710 /* CoreXLSX in Frameworks */ = {isa = PBXBuildFile; productRef = 55BA76222FFE90000033F710 /* CoreXLSX */; };
 	55BA76012FFE80000033F710 /* GrafikAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BA76112FFE80000033F710 /* GrafikAppApp.swift */; };
 	55BA76022FFE80000033F710 /* ScheduleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BA76122FFE80000033F710 /* ScheduleModels.swift */; };
 	55BA76032FFE80000033F710 /* ScheduleReaderBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BA76132FFE80000033F710 /* ScheduleReaderBackend.swift */; };
@@ -29,6 +30,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				55BA76002FFE90000033F710 /* CoreXLSX in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -80,6 +82,7 @@
 			);
 			name = GrafikApp;
 			packageProductDependencies = (
+				55BA76222FFE90000033F710 /* CoreXLSX */,
 			);
 			productName = GrafikApp;
 			productReference = 55BA75E82FFE78D20033F710 /* GrafikApp.app */;
@@ -109,6 +112,9 @@
 			);
 			mainGroup = 55BA75DF2FFE78D20033F710;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				55BA76212FFE90000033F710 /* XCRemoteSwiftPackageReference "CoreXLSX" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 55BA75E92FFE78D20033F710 /* Products */;
 			projectDirPath = "";
@@ -356,6 +362,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		55BA76212FFE90000033F710 /* XCRemoteSwiftPackageReference "CoreXLSX" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/CoreOffice/CoreXLSX.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.14.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		55BA76222FFE90000033F710 /* CoreXLSX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 55BA76212FFE90000033F710 /* XCRemoteSwiftPackageReference "CoreXLSX" */;
+			productName = CoreXLSX;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 55BA75E02FFE78D20033F710 /* Project object */;
 }

@@ -1,4 +1,7 @@
 import Combine
+#if canImport(CoreXLSX)
+import CoreXLSX
+#endif
 import Foundation
 
 final class ScheduleReaderBackend: ObservableObject {
@@ -35,12 +38,20 @@ final class ScheduleReaderBackend: ObservableObject {
             }
         }
 
-        let readableURL = try csvReadableURL(for: sourceURL)
-        let source = try String(contentsOf: readableURL, encoding: .utf8)
-        let schedule = parseScheduleCSV(source)
+        let schedule = try parseSchedule(from: sourceURL)
         let events = makeCalendarEvents(schedule: schedule, client: employee.name)
+        guard !events.isEmpty else { throw ScheduleReaderError.noShiftsForEmployee }
+
         let ics = makeICS(events: events)
-        let fileURL = try save(ics: ics, employee: employee, month: month, customName: customName)
+        guard ics.contains("BEGIN:VEVENT") else { throw ScheduleReaderError.noShiftsForEmployee }
+
+        let fileURL: URL
+        do {
+            fileURL = try save(ics: ics, employee: employee, month: month, customName: customName)
+        } catch {
+            throw ScheduleReaderError.icsWriteFailed
+        }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { throw ScheduleReaderError.icsWriteFailed }
 
         let generated = GeneratedScheduleFile(
             fileName: fileURL.lastPathComponent,
@@ -54,6 +65,23 @@ final class ScheduleReaderBackend: ObservableObject {
         return generated
     }
 
+    private func parseSchedule(from sourceURL: URL) throws -> [(date: Date, people: [String: WorkShift?])] {
+        switch sourceURL.pathExtension.lowercased() {
+        case "csv":
+            let source: String
+            do {
+                source = try String(contentsOf: sourceURL, encoding: .utf8)
+            } catch {
+                throw ScheduleReaderError.unreadableSource
+            }
+            return try validated(schedule: parseScheduleCSV(source))
+        case "xlsx":
+            return try validated(schedule: parseScheduleXLSX(sourceURL))
+        default:
+            throw ScheduleReaderError.unsupportedExtension
+        }
+    }
+
     private func parseScheduleCSV(_ source: String) -> [(date: Date, people: [String: WorkShift?])] {
         var schedule: [(date: Date, people: [String: WorkShift?])] = []
         let rows = source
@@ -63,7 +91,7 @@ final class ScheduleReaderBackend: ObservableObject {
         for row in rows {
             for cell in row {
                 if let date = parseDate(cell) {
-                    let day = Dictionary(uniqueKeysWithValues: employees.map { ($0.name, Optional<WorkShift>.none) })
+                    let day = emptyDay()
                     schedule.append((date: date, people: day))
                 }
             }
@@ -81,10 +109,111 @@ final class ScheduleReaderBackend: ObservableObject {
         return schedule
     }
 
+    private func parseScheduleXLSX(_ sourceURL: URL) throws -> [(date: Date, people: [String: WorkShift?])] {
+#if canImport(CoreXLSX)
+        guard let file = XLSXFile(filepath: sourceURL.path) else { throw ScheduleReaderError.unreadableXLSX }
+        let sharedStrings = try? file.parseSharedStrings()
+        _ = try? file.parseStyles()
+
+        let worksheetPaths: [String]
+        do {
+            worksheetPaths = try file.parseWorksheetPaths()
+        } catch {
+            throw ScheduleReaderError.unreadableXLSX
+        }
+        guard let worksheetPath = worksheetPaths.first else { throw ScheduleReaderError.noWorksheet }
+
+        let worksheet: Worksheet
+        do {
+            worksheet = try file.parseWorksheet(at: worksheetPath)
+        } catch {
+            throw ScheduleReaderError.unreadableXLSX
+        }
+        guard let rows = worksheet.data?.rows, !rows.isEmpty else { throw ScheduleReaderError.noWorksheet }
+
+        var dateByColumn: [Int: Date] = [:]
+        var scheduleByDay: [Date: [String: WorkShift?]] = [:]
+        var recognizedEmployees = Set<String>()
+
+        for row in rows {
+            var rowValues: [(column: Int, text: String, date: Date?)] = []
+            for cell in row.cells {
+                let text = xlsxText(for: cell, sharedStrings: sharedStrings)
+                let date = cell.dateValue ?? parseDate(text)
+                let column = columnIndex(from: String(describing: cell.reference))
+                rowValues.append((column: column, text: text, date: date))
+
+                if let date {
+                    dateByColumn[column] = date
+                    if scheduleByDay[date] == nil {
+                        scheduleByDay[date] = emptyDay()
+                    }
+                }
+            }
+
+            let employee = employeeIn(row: rowValues.map(\.text))
+            if let employee {
+                recognizedEmployees.insert(employee)
+            }
+
+            for value in rowValues {
+                guard let employee, let date = dateByColumn[value.column], let shift = parseWorkHours(value.text) else { continue }
+                if scheduleByDay[date] == nil {
+                    scheduleByDay[date] = emptyDay()
+                }
+                scheduleByDay[date]?[employee] = shift
+            }
+        }
+
+        if scheduleByDay.isEmpty { throw ScheduleReaderError.noRecognizedDates }
+        if recognizedEmployees.isEmpty { throw ScheduleReaderError.noRecognizedEmployees }
+        return scheduleByDay.keys.sorted().map { (date: $0, people: scheduleByDay[$0] ?? emptyDay()) }
+#else
+        throw ScheduleReaderError.unreadableXLSX
+#endif
+    }
+
+#if canImport(CoreXLSX)
+    private func xlsxText(for cell: Cell, sharedStrings: SharedStrings?) -> String {
+        if let sharedStrings, let value = cell.stringValue(sharedStrings) {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return (cell.value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+#endif
+
+    private func validated(schedule: [(date: Date, people: [String: WorkShift?])]) throws -> [(date: Date, people: [String: WorkShift?])] {
+        guard !schedule.isEmpty else { throw ScheduleReaderError.noRecognizedDates }
+        let hasEmployee = schedule.contains { day in
+            employees.contains { day.people.keys.contains($0.name) }
+        }
+        guard hasEmployee else { throw ScheduleReaderError.noRecognizedEmployees }
+        return schedule
+    }
+
+    private func emptyDay() -> [String: WorkShift?] {
+        Dictionary(uniqueKeysWithValues: employees.map { ($0.name, Optional<WorkShift>.none) })
+    }
+
+    private func columnIndex(from reference: String) -> Int {
+        var result = 0
+        for scalar in reference.uppercased().unicodeScalars where scalar.value >= 65 && scalar.value <= 90 {
+            result = result * 26 + Int(scalar.value - 64)
+        }
+        return result
+    }
+
     private func employeeIn(row: [String]) -> String? {
         for employee in employees where row.contains(where: { $0.localizedCaseInsensitiveContains(employee.name) }) {
             return employee.name
         }
+
+        for cell in row {
+            let value = cell.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard value.hasPrefix("P"), let number = Int(value.dropFirst()), employees.indices.contains(number - 1) else { continue }
+            return employees[number - 1].name
+        }
+
         return nil
     }
 
@@ -241,20 +370,6 @@ final class ScheduleReaderBackend: ObservableObject {
         let url = folder.appendingPathComponent(finalName)
         try ics.write(to: url, atomically: true, encoding: .utf8)
         return url
-    }
-
-    private func csvReadableURL(for sourceURL: URL) throws -> URL {
-        guard sourceURL.pathExtension.lowercased() == "xlsx" else { return sourceURL }
-
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(sourceURL.deletingPathExtension().lastPathComponent)
-            .appendingPathExtension("csv")
-
-        if FileManager.default.fileExists(atPath: temporaryURL.path) {
-            try FileManager.default.removeItem(at: temporaryURL)
-        }
-        try FileManager.default.copyItem(at: sourceURL, to: temporaryURL)
-        return temporaryURL
     }
 
     private func splitCSVLine(_ line: String) -> [String] {
